@@ -1,135 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attachment Gallery</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; background-color: #f9f9f9; }
-
-        /* Container for all attachments */
-        #attachments-container {
+        .attachment-grid {
             display: flex;
             gap: 15px;
-            flex-wrap: wrap;
+            padding: 20px;
         }
 
-        /* The clickable wrapper (Opens in new tab) */
-        .attachment-link {
+        /* 1. The container/link: Opens file on click in a new tab */
+        .file-wrapper {
             position: relative;
-            display: flex;
-            width: 150px;
-            height: 150px;
-            border-radius: 10px;
+            width: 120px;
+            height: 120px;
+            border-radius: 8px;
+            background: #f0f0f0;
             overflow: hidden;
-            background-color: #fff;
-            border: 1px solid #ddd;
-            text-decoration: none;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .attachment-link:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        /* The Preview (Image/Video) */
-        .preview-content {
-            width: 100%;
-            height: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #eee;
+            text-decoration: none; /* Removes underline */
+            border: 1px solid #ddd;
         }
 
-        .preview-content img, 
-        .preview-content video {
+        .file-preview {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
 
-        /* The Filename - Hidden by default */
-        .file-label {
+        /* 2. Hidden by default on the page */
+        .file-name-overlay {
             position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.75);
             color: white;
-            font-size: 12px;
-            padding: 8px 5px;
+            font-size: 11px;
+            padding: 5px;
             text-align: center;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-
-            /* Hover mechanics */
+            
+            /* Visibility logic */
             opacity: 0;
-            transition: opacity 0.3s ease;
+            visibility: hidden;
+            transition: opacity 0.2s ease;
         }
 
-        /* Reveal filename only when hovering on the attachment-link */
-        .attachment-link:hover .file-label {
+        /* 3. Display name ONLY when hovered */
+        .file-wrapper:hover .file-name-overlay {
             opacity: 1;
+            visibility: visible;
         }
     </style>
 </head>
 <body>
 
-    <h2>Attachments</h2>
-    <div id="attachments-container">
+    <div class="attachment-grid" id="attachmentGrid">
         </div>
 
     <script>
-        /**
-         * Function to add an attachment
-         * @param {string} fileUrl - The path or URL to the file
-         * @param {string} fileName - The name to show on hover
-         * @param {string} fileType - The MIME type (e.g., 'image/jpeg' or 'video/mp4')
-         */
-        function addAttachment(fileUrl, fileName, fileType) {
-            const container = document.getElementById('attachments-container');
+        function createFileAttachment(url, name, type) {
+            const grid = document.getElementById('attachmentGrid');
 
-            // 1. Create the anchor tag (Target _blank for new tab)
+            // Create anchor link
             const anchor = document.createElement('a');
-            anchor.href = fileUrl;
-            anchor.target = '_blank'; 
-            anchor.className = 'attachment-link';
+            anchor.href = url;
+            anchor.target = "_blank"; // Opens in new tab
+            anchor.className = "file-wrapper";
 
-            // 2. Create the preview div
-            const preview = document.createElement('div');
-            preview.className = 'preview-content';
-
-            if (fileType.startsWith('image/')) {
+            // Create Preview (Image or Icon)
+            if (type.startsWith('image/')) {
                 const img = document.createElement('img');
-                img.src = fileUrl;
-                preview.appendChild(img);
-            } else if (fileType.startsWith('video/')) {
-                const video = document.createElement('video');
-                video.src = fileUrl;
-                video.muted = true; // Required for many browsers to show frames
-                preview.appendChild(video);
+                img.src = url;
+                img.className = "file-preview";
+                anchor.appendChild(img);
             } else {
-                // Fallback icon for other files
-                preview.innerHTML = '<span style="font-size: 40px;">📄</span>';
+                anchor.innerHTML = '<span style="font-size:24px;">📄</span>';
             }
 
-            // 3. Create the filename label (Hidden by default in CSS)
-            const label = document.createElement('div');
-            label.className = 'file-label';
-            label.textContent = fileName;
+            // Create Name Overlay (Hidden by default)
+            const nameLabel = document.createElement('div');
+            nameLabel.className = "file-name-overlay";
+            nameLabel.textContent = name;
 
-            // Assemble
-            anchor.appendChild(preview);
-            anchor.appendChild(label);
-            container.appendChild(anchor);
+            anchor.appendChild(nameLabel);
+            grid.appendChild(anchor);
         }
 
-        // Example Usage:
-        // addAttachment('image-path.jpg', 'summer_vacation.jpg', 'image/jpeg');
-        // addAttachment('video-path.mp4', 'presentation_video.mp4', 'video/mp4');
+        // Example: createFileAttachment('path/to/file.jpg', 'my_document.jpg', 'image/jpeg');
     </script>
 </body>
 </html>
