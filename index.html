@@ -2,134 +2,128 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attachment Gallery</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; background-color: #f9f9f9; }
-
-        /* Container for all attachments */
-        #attachments-container {
+        /* General Layout */
+        #attachment-zone {
             display: flex;
             gap: 15px;
+            padding: 20px;
             flex-wrap: wrap;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
-        /* The clickable wrapper (Opens in new tab) */
-        .attachment-link {
+        /* 1. The Wrapper: Click to open in new tab */
+        .attachment-card {
             position: relative;
-            display: flex;
-            width: 150px;
-            height: 150px;
-            border-radius: 10px;
+            width: 140px;
+            height: 140px;
+            background: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
             overflow: hidden;
-            background-color: #fff;
-            border: 1px solid #ddd;
-            text-decoration: none;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .attachment-link:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        /* The Preview (Image/Video) */
-        .preview-content {
-            width: 100%;
-            height: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #eee;
+            cursor: pointer;
+            text-decoration: none; /* Critical: removes link styling */
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
 
-        .preview-content img, 
-        .preview-content video {
+        .attachment-card:hover {
+            border-color: #007bff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        /* Preview Handling */
+        .preview-media {
             width: 100%;
             height: 100%;
             object-fit: cover;
+            display: block;
         }
 
-        /* The Filename - Hidden by default */
-        .file-label {
+        .icon-fallback {
+            font-size: 40px;
+        }
+
+        /* 2. Filename: Hidden by default (Not displayed on user page) */
+        .hover-filename {
             position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            font-size: 12px;
-            padding: 8px 5px;
+            background: rgba(0, 0, 0, 0.85); /* High contrast for readability */
+            color: #ffffff;
+            font-size: 11px;
+            padding: 8px 4px;
             text-align: center;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-
-            /* Hover mechanics */
+            word-break: break-all;
+            
+            /* Visibility Logic */
             opacity: 0;
-            transition: opacity 0.3s ease;
+            transform: translateY(100%); /* Slides in from bottom */
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            pointer-events: none; /* Prevents text from blocking clicks */
         }
 
-        /* Reveal filename only when hovering on the attachment-link */
-        .attachment-link:hover .file-label {
+        /* 3. Display filename ONLY when hovered */
+        .attachment-card:hover .hover-filename {
             opacity: 1;
+            transform: translateY(0);
         }
     </style>
 </head>
 <body>
 
-    <h2>Attachments</h2>
-    <div id="attachments-container">
+    <div id="attachment-zone">
         </div>
 
     <script>
         /**
-         * Function to add an attachment
-         * @param {string} fileUrl - The path or URL to the file
-         * @param {string} fileName - The name to show on hover
-         * @param {string} fileType - The MIME type (e.g., 'image/jpeg' or 'video/mp4')
+         * Standard function to generate the attachment
          */
-        function addAttachment(fileUrl, fileName, fileType) {
-            const container = document.getElementById('attachments-container');
+        function renderAttachment(fileUrl, fileName, fileType) {
+            const container = document.getElementById('attachment-zone');
 
-            // 1. Create the anchor tag (Target _blank for new tab)
-            const anchor = document.createElement('a');
-            anchor.href = fileUrl;
-            anchor.target = '_blank'; 
-            anchor.className = 'attachment-link';
+            // Create the anchor link (Fixed: opens in new tab)
+            const link = document.createElement('a');
+            link.href = fileUrl;
+            link.target = "_blank"; 
+            link.rel = "noopener noreferrer"; // Security best practice for new tabs
+            link.className = "attachment-card";
 
-            // 2. Create the preview div
-            const preview = document.createElement('div');
-            preview.className = 'preview-content';
-
+            // Create Media Preview
             if (fileType.startsWith('image/')) {
                 const img = document.createElement('img');
                 img.src = fileUrl;
-                preview.appendChild(img);
+                img.className = "preview-media";
+                link.appendChild(img);
             } else if (fileType.startsWith('video/')) {
                 const video = document.createElement('video');
                 video.src = fileUrl;
-                video.muted = true; // Required for many browsers to show frames
-                preview.appendChild(video);
+                video.className = "preview-media";
+                video.muted = true;
+                link.appendChild(video);
             } else {
-                // Fallback icon for other files
-                preview.innerHTML = '<span style="font-size: 40px;">📄</span>';
+                // Fallback icon for PDF/Docs
+                const icon = document.createElement('span');
+                icon.className = "icon-fallback";
+                icon.textContent = "📄";
+                link.appendChild(icon);
             }
 
-            // 3. Create the filename label (Hidden by default in CSS)
-            const label = document.createElement('div');
-            label.className = 'file-label';
-            label.textContent = fileName;
+            // Create the Hover-only Filename
+            const nameOverlay = document.createElement('div');
+            nameOverlay.className = "hover-filename";
+            nameOverlay.textContent = fileName;
 
-            // Assemble
-            anchor.appendChild(preview);
-            anchor.appendChild(label);
-            container.appendChild(anchor);
+            link.appendChild(nameOverlay);
+            container.appendChild(link);
         }
 
-        // Example Usage:
-        // addAttachment('image-path.jpg', 'summer_vacation.jpg', 'image/jpeg');
-        // addAttachment('video-path.mp4', 'presentation_video.mp4', 'video/mp4');
+        // --- TEST DATA ---
+        // renderAttachment('https://via.placeholder.com/300', 'holiday_photo.jpg', 'image/jpeg');
+        // renderAttachment('your_video.mp4', 'presentation_final.mp4', 'video/mp4');
     </script>
 </body>
 </html>
