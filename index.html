@@ -23,7 +23,7 @@
     .subfolders { margin-left: 14px; border-left: 2px dashed #ddd; padding-left: 12px; }
     .archived { opacity: 0.6; background: #fcfcfd; border-style: dashed; }
     .archive-label { font-size: 12px; color: #a33; margin-left: 8px; }
-    .admin-controls { display:flex; gap:8px; align-items:center; }
+    .admin-controls { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
     /* Toolbar */
     .toolbar { margin-top: 12px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .toolbar.hidden { display:none; }
@@ -37,6 +37,7 @@
     input[type="file"] { font-size:13px; }
     .btn { padding:6px 10px; border-radius:6px; border:1px solid #bbb; background:#fff; cursor:pointer; }
     .btn.primary { background:#0078d4; color:#fff; border-color:#006bb3; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .cell-controls { display:flex; gap:6px; margin-top:6px; }
     .cell-attachment { margin-top:8px; }
     .link-inline { color:#006bb3; text-decoration:underline; }
@@ -63,9 +64,12 @@
         <button onclick="addRootFolder()">Add root folder</button>
         <button id="toggleArchiveBtn" onclick="toggleShowArchived()">Show archived</button>
         <button id="toggleToolbarBtn" onclick="toggleToolbar()">Toggle cell attachments toolbar</button>
+        <div style="margin-left:auto; display:flex; gap:8px;">
+            <button id="undoBtn" class="btn" onclick="undo()" disabled>↶ Undo</button>
+            <button id="redoBtn" class="btn" onclick="redo()" disabled>↷ Redo</button>
+        </div>
       </div>
 
-      <!-- Toolbar (hideable) -->
       <div id="adminToolbar" class="toolbar hidden" aria-hidden="true">
         <div class="group">
           <label class="small">Selected cell</label>
@@ -86,7 +90,7 @@
 
         <div class="group">
           <label class="small">Clear cell</label>
-          <button class="btn" onclick="clearSelectedCell()">Clear</button>
+          <button class="btn" onclick="clearSelectedCellContent()">Clear</button>
         </div>
       </div>
 
@@ -97,8 +101,59 @@
   <script>
     let data = { folders: [] };
     let showArchived = false;
-    // selectedCell: { key: "path|t", r: number, c: number } or null
-    let selectedCell = null;
+    let selectedCell = null; // { key: "path|t", r: number, c: number }
+
+    // --- UNDO/REDO SYSTEM ---
+    const MAX_HISTORY = 50;
+    let historyStack = [];
+    let redoStack = [];
+
+    function pushHistory() {
+      // Deep copy current state before modification
+      const state = JSON.stringify(data);
+      historyStack.push(state);
+      if (historyStack.length > MAX_HISTORY) historyStack.shift();
+      
+      // Clear redo stack on new action
+      redoStack = [];
+      updateUndoRedoButtons();
+    }
+
+    function undo() {
+      if (historyStack.length === 0) return;
+      
+      // Save current state to redo stack
+      redoStack.push(JSON.stringify(data));
+      
+      // Restore previous state
+      const prevState = historyStack.pop();
+      data = JSON.parse(prevState);
+      
+      saveData(false); // save to storage but don't clear redo
+      renderAll();
+      updateUndoRedoButtons();
+    }
+
+    function redo() {
+      if (redoStack.length === 0) return;
+      
+      // Save current state to history stack
+      historyStack.push(JSON.stringify(data));
+      
+      // Restore next state
+      const nextState = redoStack.pop();
+      data = JSON.parse(nextState);
+      
+      saveData(false);
+      renderAll();
+      updateUndoRedoButtons();
+    }
+
+    function updateUndoRedoButtons() {
+      document.getElementById('undoBtn').disabled = historyStack.length === 0;
+      document.getElementById('redoBtn').disabled = redoStack.length === 0;
+    }
+    // ------------------------
 
     async function loadData() {
       const saved = localStorage.getItem('appData');
@@ -112,8 +167,13 @@
         } catch (e) { data = { folders: [] }; }
       }
       renderAll();
+      updateUndoRedoButtons();
     }
-    function saveData() { localStorage.setItem('appData', JSON.stringify(data)); }
+
+    function saveData(clearRedo = true) { 
+        localStorage.setItem('appData', JSON.stringify(data)); 
+        if(clearRedo) updateUndoRedoButtons();
+    }
 
     function renderAll() { renderUser(); renderAdmin(); }
 
@@ -141,15 +201,18 @@
       if (!lbl) return;
       if (!selectedCell) { lbl.innerText = "None"; return; }
       const { key, r, c } = selectedCell;
-      const { f, t } = tableRef(key);
-      const table = f.tables[t];
-      const folderPath = key.split("|")[0];
-      lbl.innerText = `Folder ${folderPath} • Table "${table.name}" • Row ${r} • Col ${c}`;
+      // Safety check in case table was deleted
+      try {
+        const { f, t } = tableRef(key);
+        const table = f.tables[t];
+        const folderPath = key.split("|")[0];
+        lbl.innerText = `Folder ${folderPath} • Table "${table.name}" • Row ${r} • Col ${c}`;
+      } catch (e) {
+         selectedCell = null;
+         lbl.innerText = "None";
+      }
     }
 
-    /**
-     * renderFolders(folders, editable, pathPrefix, includeArchived)
-     */
     function renderFolders(folders, editable, pathPrefix, includeArchived) {
       return folders.map((folder,i)=>{
         const path = pathPrefix===""?String(i):pathPrefix+"/"+i;
@@ -163,7 +226,7 @@
         const header = editable
           ? `<div class="folder-header">
                <div>
-                 <div class="editable" contenteditable="true" onblur="renameFolder('${path}',this.innerText)">${escapeHtml(folder.name)}</div>
+                 <div class="editable" contenteditable="true" onfocus="storePreEditState()" onblur="renameFolder('${path}',this.innerText)">${escapeHtml(folder.name)}</div>
                  ${folder.archived ? `<span class="archive-label">ARCHIVED</span>` : ""}
                </div>
                <div class="actions">
@@ -179,14 +242,14 @@
           if (table.archived && !includeArchived) return "";
           const key = path+"|"+t;
           const title = editable
-            ? `<div class="editable" contenteditable="true" onblur="renameTable('${key}',this.innerText)">${escapeHtml(table.name)}</div>`
+            ? `<div class="editable" contenteditable="true" onfocus="storePreEditState()" onblur="renameTable('${key}',this.innerText)">${escapeHtml(table.name)}</div>`
             : `<strong>${escapeHtml(table.name)}</strong>`;
           const tableArchiveBtn = editable
             ? (table.archived
                 ? `<button onclick="toggleArchiveTable('${key}',false)">Remove from archive</button>`
                 : `<button onclick="toggleArchiveTable('${key}',true)">Add to archive</button>`)
             : "";
-          const cols = `<tr>${table.columns.map((c,ci)=>`<th>${escapeHtml(c)}</th>`).join("")}</tr>`;
+          const cols = `<tr>${table.columns.map((c,ci)=> editable ? `<th contenteditable="true" onfocus="storePreEditState()" onblur="renameColumn('${key}',${ci},this.innerText)">${escapeHtml(c)}</th>` : `<th>${escapeHtml(c)}</th>`).join("")}</tr>`;
           const rows = (table.rows || []).map((row,r)=>{
             return `<tr>${row.map((cell,c)=>renderCell(cell, key, r, c, editable)).join("")}</tr>`;
           }).join("");
@@ -207,7 +270,6 @@
     }
 
     function renderCell(cell, key, r, c, editable){
-      // cell can be string or object { type: 'text'|'file'|'link', name, mime, url }
       const cellId = `${key}|${r}|${c}`;
       const isSelected = selectedCell && selectedCell.key===key && selectedCell.r===r && selectedCell.c===c;
       const selClass = isSelected ? "cell-selected" : "";
@@ -215,32 +277,56 @@
         const thumb = cell.mime && cell.mime.startsWith('image/') ? `<img class="attach-thumb" src="${cell.url}" alt="${escapeHtml(cell.name)}">` : `<div style="width:48px;height:48px;border-radius:4px;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:18px;color:#666">📎</div>`;
         const meta = `<div class="attach-inline"><div>${thumb}</div><div class="meta"><div style="font-weight:600">${escapeHtml(cell.name)}</div><div class="small">${escapeHtml(cell.mime || '')}</div></div></div>`;
         const removeBtn = editable ? `<div class="cell-controls"><button class="btn" onclick="removeCellAttachment('${key}',${r},${c})">Remove attachment</button></div>` : "";
-        return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})" onblur="maybeSaveTextCell('${key}',${r},${c},this)"><div class="cell-attachment">${meta}${removeBtn}</div></td>`;
+        return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})"><div class="cell-attachment">${meta}${removeBtn}</div></td>`;
       } else if (cell && typeof cell === 'object' && cell.type === 'link'){
         const linkHtml = `<a class="link-inline" href="${escapeHtml(cell.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(cell.name || cell.url)}</a>`;
         const removeBtn = editable ? `<div class="cell-controls"><button class="btn" onclick="removeCellAttachment('${key}',${r},${c})">Remove link</button></div>` : "";
         return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})">${linkHtml}${removeBtn}</td>`;
       } else {
-        // treat as text
         const text = cell == null ? "" : String(cell);
         if (editable){
-          // contenteditable for text cells
-          return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})"><div contenteditable="true" onblur="editCellText('${key}',${r},${c},this.innerText)">${escapeHtml(text)}</div></td>`;
+          // We use onfocus to store state, onblur to save. 
+          return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})"><div contenteditable="true" onfocus="storePreEditState()" onblur="editCellText('${key}',${r},${c},this.innerText)">${escapeHtml(text)}</div></td>`;
         } else {
           return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})">${escapeHtml(text)}</td>`;
         }
       }
     }
 
+    // --- Helper to capture state before ContentEditable changes ---
+    // Contenteditable doesn't fire "change" events, so we grab history on focus.
+    // However, we only want to push to history if the value ACTUALLY changed on blur.
+    let preEditState = null;
+    function storePreEditState() {
+        preEditState = JSON.stringify(data);
+    }
+    function commitIfChanged(newValue, oldValue) {
+        if(preEditState && newValue !== oldValue) {
+             historyStack.push(preEditState);
+             if (historyStack.length > MAX_HISTORY) historyStack.shift();
+             redoStack = [];
+             updateUndoRedoButtons();
+        }
+        preEditState = null; 
+    }
+
     // Folder ops
-    function addRootFolder(){data.folders.push({name:"New folder",tables:[],subfolders:[],archived:false});saveData();renderAll();}
+    function addRootFolder(){ pushHistory(); data.folders.push({name:"New folder",tables:[],subfolders:[],archived:false});saveData();renderAll();}
     function addSubfolder(path){
+      pushHistory();
       const f=getFolder(path);
       f.subfolders.push({name:"New subfolder",tables:[],subfolders:[],archived:false});
       saveData();renderAll();
     }
-    function renameFolder(path,n){getFolder(path).name=n;saveData();}
+    function renameFolder(path,n){
+        const f = getFolder(path);
+        if(f.name === n) return; // no change
+        commitIfChanged(n, f.name); // use pre-edit state
+        f.name=n; 
+        saveData();
+    }
     function removeFolder(path){
+      pushHistory();
       const parts=path.split("/").map(Number);
       const idx=parts.pop();
       if (parts.length){
@@ -254,20 +340,51 @@
 
     // Table ops
     function addTable(path){
+      pushHistory();
       const f=getFolder(path);
       f.tables = f.tables || [];
       f.tables.push({name:"New table",columns:["Col1","Col2"],rows:[],archived:false});
       saveData();renderAll();
     }
-    function renameTable(key,n){const {f,t}=tableRef(key);f.tables[t].name=n;saveData();}
-    function removeTable(key){const {f,t}=tableRef(key);f.tables.splice(t,1);saveData();renderAll();}
-    function renameColumn(key,c,n){const {f,t}=tableRef(key);f.tables[t].columns[c]=n;saveData();}
-    function addRow(key){const {f,t}=tableRef(key);const cols=f.tables[t].columns.length;f.tables[t].rows.push(Array(cols).fill(""));saveData();renderAll();}
-    function editCellText(key,r,c,v){const {f,t}=tableRef(key);f.tables[t].rows[r][c]=v;saveData();}
-    function maybeSaveTextCell(key,r,c,el){ /* placeholder if needed */ }
-
-    // Add column
+    function renameTable(key,n){
+        const {f,t}=tableRef(key);
+        if(f.tables[t].name === n) return;
+        commitIfChanged(n, f.tables[t].name);
+        f.tables[t].name=n;
+        saveData();
+    }
+    function removeTable(key){
+        pushHistory();
+        const {f,t}=tableRef(key);
+        f.tables.splice(t,1);
+        saveData();
+        renderAll();
+    }
+    function renameColumn(key,c,n){
+        const {f,t}=tableRef(key);
+        if(f.tables[t].columns[c] === n) return;
+        commitIfChanged(n, f.tables[t].columns[c]);
+        f.tables[t].columns[c]=n;
+        saveData();
+    }
+    function addRow(key){
+        pushHistory();
+        const {f,t}=tableRef(key);
+        const cols=f.tables[t].columns.length;
+        f.tables[t].rows.push(Array(cols).fill(""));
+        saveData();
+        renderAll();
+    }
+    function editCellText(key,r,c,v){
+        const {f,t}=tableRef(key);
+        const currentVal = (typeof f.tables[t].rows[r][c] === 'string') ? f.tables[t].rows[r][c] : "";
+        if(currentVal === v) return;
+        commitIfChanged(v, currentVal);
+        f.tables[t].rows[r][c]=v;
+        saveData();
+    }
     function addColumn(key){
+      pushHistory();
       const {f,t} = tableRef(key);
       const newColName = "Col" + (f.tables[t].columns.length + 1);
       f.tables[t].columns.push(newColName);
@@ -279,6 +396,7 @@
     // Archive ops
     function toggleShowArchived(){ showArchived = !showArchived; renderAll(); }
     function toggleArchiveFolder(path, state){
+      pushHistory();
       const folder = getFolder(path);
       setFolderArchive(folder, !!state);
       saveData();
@@ -290,6 +408,7 @@
       if (folderNode.subfolders) folderNode.subfolders.forEach(sf => setFolderArchive(sf, state));
     }
     function toggleArchiveTable(key, state){
+      pushHistory();
       const {f,t} = tableRef(key);
       f.tables[t].archived = !!state;
       saveData();
@@ -299,18 +418,19 @@
     // Cell selection and attachments
     function selectCell(key, r, c){
       selectedCell = { key, r, c };
-      // re-render only the affected table to show selection
       renderAdmin();
       renderUser();
       updateSelectedCellLabel();
     }
 
-    function clearSelectedCell(){
+    function clearSelectedCellContent(){
       if (!selectedCell) return;
-      selectedCell = null;
-      renderAdmin();
-      renderUser();
-      updateSelectedCellLabel();
+      pushHistory();
+      const { key, r, c } = selectedCell;
+      const { f, t } = tableRef(key);
+      f.tables[t].rows[r][c] = "";
+      saveData();
+      renderAll();
     }
 
     async function handleCellFileAttach(){
@@ -318,9 +438,12 @@
       const input = document.getElementById('cellFileInput');
       const files = input.files;
       if (!files || files.length === 0){ alert('Choose a file to attach'); return; }
+      
+      // We push history inside the onload to ensure we captured state before async change
       const file = files[0];
       const reader = new FileReader();
       reader.onload = function(e){
+        pushHistory(); 
         const dataUrl = e.target.result;
         const attach = { type: 'file', name: file.name, mime: file.type || 'application/octet-stream', url: dataUrl };
         const { key, r, c } = selectedCell;
@@ -337,6 +460,8 @@
       if (!selectedCell){ alert('Select a cell first (click a cell in admin view).'); return; }
       const url = document.getElementById('cellLinkInput').value.trim();
       if (!url){ alert('Enter a link'); return; }
+      
+      pushHistory();
       const name = url.replace(/^https?:\/\//,'').split('/')[0];
       const attach = { type: 'link', name: name, mime: '', url: url };
       const { key, r, c } = selectedCell;
@@ -348,6 +473,7 @@
     }
 
     function removeCellAttachment(key, r, c){
+      pushHistory();
       const { f, t } = tableRef(key);
       f.tables[t].rows[r][c] = "";
       saveData();
@@ -364,7 +490,6 @@
       return node;
     }
     function tableRef(key){
-      // key is "path|t"
       const [path, t] = key.split("|");
       return { f: getFolder(path), t: parseInt(t) };
     }
@@ -372,7 +497,6 @@
     function showUser(){document.getElementById('user').style.display='block';document.getElementById('admin').style.display='none';}
     function showAdmin(){document.getElementById('admin').style.display='block';document.getElementById('user').style.display='none';}
 
-    // small utility
     function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
     loadData();
