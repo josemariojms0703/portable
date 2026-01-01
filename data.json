@@ -1,0 +1,32 @@
+{
+  "folders": [
+    {
+      "name": "Projects",
+      "tables": [
+        {
+          "name": "Tasks",
+          "columns": ["ID", "Title", "Status"],
+          "rows": [
+            ["1", "Design UI", "In Progress"],
+            ["2", "Build Backend", "Pending"]
+          ]
+        }
+      ],
+      "subfolders": [
+        {
+          "name": "Archive",
+          "tables": [
+            {
+              "name": "Old Tasks",
+              "columns": ["ID", "Title", "Status"],
+              "rows": [
+                ["101", "Sketch ideas", "Done"]
+              ]
+            }
+          ],
+          "subfolders": []
+        }
+      ]
+    }
+  ]
+}
