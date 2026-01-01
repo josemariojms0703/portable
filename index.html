@@ -1,129 +1,505 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <style>
-        /* General Layout */
-        #attachment-zone {
-            display: flex;
-            gap: 15px;
-            padding: 20px;
-            flex-wrap: wrap;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }
-
-        /* 1. The Wrapper: Click to open in new tab */
-        .attachment-card {
-            position: relative;
-            width: 140px;
-            height: 140px;
-            background: #ffffff;
-            border: 1px solid #e0e0e0;
-            border-radius: 12px;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            text-decoration: none; /* Critical: removes link styling */
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-
-        .attachment-card:hover {
-            border-color: #007bff;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-
-        /* Preview Handling */
-        .preview-media {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
-
-        .icon-fallback {
-            font-size: 40px;
-        }
-
-        /* 2. Filename: Hidden by default (Not displayed on user page) */
-        .hover-filename {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: rgba(0, 0, 0, 0.85); /* High contrast for readability */
-            color: #ffffff;
-            font-size: 11px;
-            padding: 8px 4px;
-            text-align: center;
-            word-break: break-all;
-            
-            /* Visibility Logic */
-            opacity: 0;
-            transform: translateY(100%); /* Slides in from bottom */
-            transition: opacity 0.2s ease, transform 0.2s ease;
-            pointer-events: none; /* Prevents text from blocking clicks */
-        }
-
-        /* 3. Display filename ONLY when hovered */
-        .attachment-card:hover .hover-filename {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Portable Data Manager</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f6f7fb; }
+    header { background: #fff; padding: 12px 20px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; }
+    header h1 { margin: 0; font-size: 18px; }
+    .nav button { margin-left: 8px; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
+    main { max-width: 1000px; margin: 20px auto; padding: 0 16px; }
+    .panel { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+    .folder { border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin: 12px 0; background: #fff; }
+    .folder-header { display: flex; justify-content: space-between; align-items: center; }
+    .editable { outline: none; }
+    .editable:focus { background: #eef6ff; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; overflow-x: auto; display: block; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; vertical-align: middle; }
+    th { background: #f0f4f8; }
+    tr:nth-child(even) { background: #fafafa; }
+    tr:hover { background: #f1f9ff; }
+    .actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .subfolders { margin-left: 14px; border-left: 2px dashed #ddd; padding-left: 12px; }
+    .archived { opacity: 0.6; background: #fcfcfd; border-style: dashed; }
+    .archive-label { font-size: 12px; color: #a33; margin-left: 8px; }
+    .admin-controls { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
+    /* Toolbar */
+    .toolbar { margin-top: 12px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .toolbar.hidden { display:none; }
+    .toolbar .group { display:flex; gap:8px; align-items:center; }
+    .cell-selected { outline: 2px solid #0078d4; background: #eef6ff; }
+    .attach-thumb { width:48px; height:48px; object-fit:cover; border-radius:4px; border:1px solid #ddd; }
+    .attach-inline { display:flex; gap:8px; align-items:center; }
+    .attach-inline .meta { display:flex; flex-direction:column; }
+    .small { font-size:13px; color:#555; }
+    input[type="text"], select { padding:6px 8px; border:1px solid #ccc; border-radius:6px; }
+    input[type="file"] { font-size:13px; }
+    .btn { padding:6px 10px; border-radius:6px; border:1px solid #bbb; background:#fff; cursor:pointer; }
+    .btn.primary { background:#0078d4; color:#fff; border-color:#006bb3; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cell-controls { display:flex; gap:6px; margin-top:6px; }
+    .cell-attachment { margin-top:8px; }
+    .link-inline { color:#006bb3; text-decoration:underline; }
+  </style>
 </head>
 <body>
+  <header>
+    <h1>Portable Data Manager</h1>
+    <div class="nav">
+      <button onclick="showUser()">User side</button>
+      <button onclick="showAdmin()">Admin side</button>
+    </div>
+  </header>
 
-    <div id="attachment-zone">
+  <main>
+    <section id="user" class="panel">
+      <h2>User view</h2>
+      <div id="userView"></div>
+    </section>
+
+    <section id="admin" class="panel" style="display:none;">
+      <h2>Admin view</h2>
+      <div class="admin-controls" style="margin-bottom:12px;">
+        <button onclick="addRootFolder()">Add root folder</button>
+        <button id="toggleArchiveBtn" onclick="toggleShowArchived()">Show archived</button>
+        <button id="toggleToolbarBtn" onclick="toggleToolbar()">Toggle cell attachments toolbar</button>
+        <div style="margin-left:auto; display:flex; gap:8px;">
+            <button id="undoBtn" class="btn" onclick="undo()" disabled>↶ Undo</button>
+            <button id="redoBtn" class="btn" onclick="redo()" disabled>↷ Redo</button>
+        </div>
+      </div>
+
+      <div id="adminToolbar" class="toolbar hidden" aria-hidden="true">
+        <div class="group">
+          <label class="small">Selected cell</label>
+          <div id="selectedCellLabel" class="small">None</div>
         </div>
 
-    <script>
-        /**
-         * Standard function to generate the attachment
-         */
-        function renderAttachment(fileUrl, fileName, fileType) {
-            const container = document.getElementById('attachment-zone');
+        <div class="group">
+          <label class="small">Attach file to cell</label>
+          <input id="cellFileInput" type="file" />
+          <button class="btn" onclick="handleCellFileAttach()">Attach</button>
+        </div>
 
-            // Create the anchor link (Fixed: opens in new tab)
-            const link = document.createElement('a');
-            link.href = fileUrl;
-            link.target = "_blank"; 
-            link.rel = "noopener noreferrer"; // Security best practice for new tabs
-            link.className = "attachment-card";
+        <div class="group">
+          <label class="small">Attach link to cell</label>
+          <input id="cellLinkInput" type="text" placeholder="https://example.com" />
+          <button class="btn" onclick="handleCellLinkAttach()">Attach link</button>
+        </div>
 
-            // Create Media Preview
-            if (fileType.startsWith('image/')) {
-                const img = document.createElement('img');
-                img.src = fileUrl;
-                img.className = "preview-media";
-                link.appendChild(img);
-            } else if (fileType.startsWith('video/')) {
-                const video = document.createElement('video');
-                video.src = fileUrl;
-                video.className = "preview-media";
-                video.muted = true;
-                link.appendChild(video);
-            } else {
-                // Fallback icon for PDF/Docs
-                const icon = document.createElement('span');
-                icon.className = "icon-fallback";
-                icon.textContent = "📄";
-                link.appendChild(icon);
-            }
+        <div class="group">
+          <label class="small">Clear cell</label>
+          <button class="btn" onclick="clearSelectedCellContent()">Clear</button>
+        </div>
+      </div>
 
-            // Create the Hover-only Filename
-            const nameOverlay = document.createElement('div');
-            nameOverlay.className = "hover-filename";
-            nameOverlay.textContent = fileName;
+      <div id="adminView"></div>
+    </section>
+  </main>
 
-            link.appendChild(nameOverlay);
-            container.appendChild(link);
+  <script>
+    let data = { folders: [] };
+    let showArchived = false;
+    let selectedCell = null; // { key: "path|t", r: number, c: number }
+
+    // --- UNDO/REDO SYSTEM ---
+    const MAX_HISTORY = 50;
+    let historyStack = [];
+    let redoStack = [];
+
+    function pushHistory() {
+      // Deep copy current state before modification
+      const state = JSON.stringify(data);
+      historyStack.push(state);
+      if (historyStack.length > MAX_HISTORY) historyStack.shift();
+      
+      // Clear redo stack on new action
+      redoStack = [];
+      updateUndoRedoButtons();
+    }
+
+    function undo() {
+      if (historyStack.length === 0) return;
+      
+      // Save current state to redo stack
+      redoStack.push(JSON.stringify(data));
+      
+      // Restore previous state
+      const prevState = historyStack.pop();
+      data = JSON.parse(prevState);
+      
+      saveData(false); // save to storage but don't clear redo
+      renderAll();
+      updateUndoRedoButtons();
+    }
+
+    function redo() {
+      if (redoStack.length === 0) return;
+      
+      // Save current state to history stack
+      historyStack.push(JSON.stringify(data));
+      
+      // Restore next state
+      const nextState = redoStack.pop();
+      data = JSON.parse(nextState);
+      
+      saveData(false);
+      renderAll();
+      updateUndoRedoButtons();
+    }
+
+    function updateUndoRedoButtons() {
+      document.getElementById('undoBtn').disabled = historyStack.length === 0;
+      document.getElementById('redoBtn').disabled = redoStack.length === 0;
+    }
+    // ------------------------
+
+    async function loadData() {
+      const saved = localStorage.getItem('appData');
+      if (saved) {
+        data = JSON.parse(saved);
+      } else {
+        try {
+          const res = await fetch('data.json');
+          data = await res.json();
+          saveData();
+        } catch (e) { data = { folders: [] }; }
+      }
+      renderAll();
+      updateUndoRedoButtons();
+    }
+
+    function saveData(clearRedo = true) { 
+        localStorage.setItem('appData', JSON.stringify(data)); 
+        if(clearRedo) updateUndoRedoButtons();
+    }
+
+    function renderAll() { renderUser(); renderAdmin(); }
+
+    function renderUser() {
+      const c = document.getElementById('userView');
+      const html = data.folders.length ? renderFolders(data.folders,false,"",false) : "<p>No data yet.</p>";
+      c.innerHTML = html;
+    }
+
+    function renderAdmin() {
+      document.getElementById('adminView').innerHTML = renderFolders(data.folders,true,"",showArchived);
+      document.getElementById('toggleArchiveBtn').innerText = showArchived ? "Hide archived" : "Show archived";
+      updateSelectedCellLabel();
+    }
+
+    function toggleToolbar(){
+      const tb = document.getElementById('adminToolbar');
+      const hidden = tb.classList.toggle('hidden');
+      tb.setAttribute('aria-hidden', hidden);
+      updateSelectedCellLabel();
+    }
+
+    function updateSelectedCellLabel(){
+      const lbl = document.getElementById('selectedCellLabel');
+      if (!lbl) return;
+      if (!selectedCell) { lbl.innerText = "None"; return; }
+      const { key, r, c } = selectedCell;
+      // Safety check in case table was deleted
+      try {
+        const { f, t } = tableRef(key);
+        const table = f.tables[t];
+        const folderPath = key.split("|")[0];
+        lbl.innerText = `Folder ${folderPath} • Table "${table.name}" • Row ${r} • Col ${c}`;
+      } catch (e) {
+         selectedCell = null;
+         lbl.innerText = "None";
+      }
+    }
+
+    function renderFolders(folders, editable, pathPrefix, includeArchived) {
+      return folders.map((folder,i)=>{
+        const path = pathPrefix===""?String(i):pathPrefix+"/"+i;
+        if (folder.archived && !includeArchived) return "";
+        const folderClass = folder.archived ? "folder archived" : "folder";
+        const archiveBtn = editable
+          ? (folder.archived
+              ? `<button onclick="toggleArchiveFolder('${path}',false)">Remove from archive</button>`
+              : `<button onclick="toggleArchiveFolder('${path}',true)">Add to archive</button>`)
+          : "";
+        const header = editable
+          ? `<div class="folder-header">
+               <div>
+                 <div class="editable" contenteditable="true" onfocus="storePreEditState()" onblur="renameFolder('${path}',this.innerText)">${escapeHtml(folder.name)}</div>
+                 ${folder.archived ? `<span class="archive-label">ARCHIVED</span>` : ""}
+               </div>
+               <div class="actions">
+                 <button onclick="addSubfolder('${path}')">Add subfolder</button>
+                 <button onclick="addTable('${path}')">Add table</button>
+                 ${archiveBtn}
+                 <button onclick="removeFolder('${path}')">Remove folder</button>
+               </div>
+             </div>`
+          : `<div class="folder-header"><strong>${escapeHtml(folder.name)}</strong>${folder.archived?` <span class="archive-label">ARCHIVED</span>`:""}</div>`;
+
+        const tables = (folder.tables||[]).map((table,t)=>{
+          if (table.archived && !includeArchived) return "";
+          const key = path+"|"+t;
+          const title = editable
+            ? `<div class="editable" contenteditable="true" onfocus="storePreEditState()" onblur="renameTable('${key}',this.innerText)">${escapeHtml(table.name)}</div>`
+            : `<strong>${escapeHtml(table.name)}</strong>`;
+          const tableArchiveBtn = editable
+            ? (table.archived
+                ? `<button onclick="toggleArchiveTable('${key}',false)">Remove from archive</button>`
+                : `<button onclick="toggleArchiveTable('${key}',true)">Add to archive</button>`)
+            : "";
+          const cols = `<tr>${table.columns.map((c,ci)=> editable ? `<th contenteditable="true" onfocus="storePreEditState()" onblur="renameColumn('${key}',${ci},this.innerText)">${escapeHtml(c)}</th>` : `<th>${escapeHtml(c)}</th>`).join("")}</tr>`;
+          const rows = (table.rows || []).map((row,r)=>{
+            return `<tr>${row.map((cell,c)=>renderCell(cell, key, r, c, editable)).join("")}</tr>`;
+          }).join("");
+          const actions = editable
+            ? `<div class="actions">
+                 <button onclick="addRow('${key}')">Add row</button>
+                 <button onclick="addColumn('${key}')">Add column</button>
+                 ${tableArchiveBtn}
+                 <button onclick="removeTable('${key}')">Remove table</button>
+               </div>`
+            : "";
+          const tablePanelClass = table.archived ? "panel archived" : "panel";
+          return `<div class="${tablePanelClass}">${title}${table.archived?` <span class="archive-label">ARCHIVED</span>`:""}<table>${cols}${rows}</table>${actions}</div>`;
+        }).join("");
+        const subs = folder.subfolders?.length?`<div class="subfolders">${renderFolders(folder.subfolders,editable,path,includeArchived)}</div>`:"";
+        return `<div class="${folderClass}">${header}${tables}${subs}</div>`;
+      }).join("");
+    }
+
+    function renderCell(cell, key, r, c, editable){
+      const cellId = `${key}|${r}|${c}`;
+      const isSelected = selectedCell && selectedCell.key===key && selectedCell.r===r && selectedCell.c===c;
+      const selClass = isSelected ? "cell-selected" : "";
+      if (cell && typeof cell === 'object' && cell.type === 'file'){
+        const thumb = cell.mime && cell.mime.startsWith('image/') ? `<img class="attach-thumb" src="${cell.url}" alt="${escapeHtml(cell.name)}">` : `<div style="width:48px;height:48px;border-radius:4px;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:18px;color:#666">📎</div>`;
+        const meta = `<div class="attach-inline"><div>${thumb}</div><div class="meta"><div style="font-weight:600">${escapeHtml(cell.name)}</div><div class="small">${escapeHtml(cell.mime || '')}</div></div></div>`;
+        const removeBtn = editable ? `<div class="cell-controls"><button class="btn" onclick="removeCellAttachment('${key}',${r},${c})">Remove attachment</button></div>` : "";
+        return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})"><div class="cell-attachment">${meta}${removeBtn}</div></td>`;
+      } else if (cell && typeof cell === 'object' && cell.type === 'link'){
+        const linkHtml = `<a class="link-inline" href="${escapeHtml(cell.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(cell.name || cell.url)}</a>`;
+        const removeBtn = editable ? `<div class="cell-controls"><button class="btn" onclick="removeCellAttachment('${key}',${r},${c})">Remove link</button></div>` : "";
+        return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})">${linkHtml}${removeBtn}</td>`;
+      } else {
+        const text = cell == null ? "" : String(cell);
+        if (editable){
+          // We use onfocus to store state, onblur to save. 
+          return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})"><div contenteditable="true" onfocus="storePreEditState()" onblur="editCellText('${key}',${r},${c},this.innerText)">${escapeHtml(text)}</div></td>`;
+        } else {
+          return `<td id="${cellId}" class="${selClass}" onclick="selectCell('${key}',${r},${c})">${escapeHtml(text)}</td>`;
         }
+      }
+    }
 
-        // --- TEST DATA ---
-        // renderAttachment('https://via.placeholder.com/300', 'holiday_photo.jpg', 'image/jpeg');
-        // renderAttachment('your_video.mp4', 'presentation_final.mp4', 'video/mp4');
-    </script>
+    // --- Helper to capture state before ContentEditable changes ---
+    // Contenteditable doesn't fire "change" events, so we grab history on focus.
+    // However, we only want to push to history if the value ACTUALLY changed on blur.
+    let preEditState = null;
+    function storePreEditState() {
+        preEditState = JSON.stringify(data);
+    }
+    function commitIfChanged(newValue, oldValue) {
+        if(preEditState && newValue !== oldValue) {
+             historyStack.push(preEditState);
+             if (historyStack.length > MAX_HISTORY) historyStack.shift();
+             redoStack = [];
+             updateUndoRedoButtons();
+        }
+        preEditState = null; 
+    }
+
+    // Folder ops
+    function addRootFolder(){ pushHistory(); data.folders.push({name:"New folder",tables:[],subfolders:[],archived:false});saveData();renderAll();}
+    function addSubfolder(path){
+      pushHistory();
+      const f=getFolder(path);
+      f.subfolders.push({name:"New subfolder",tables:[],subfolders:[],archived:false});
+      saveData();renderAll();
+    }
+    function renameFolder(path,n){
+        const f = getFolder(path);
+        if(f.name === n) return; // no change
+        commitIfChanged(n, f.name); // use pre-edit state
+        f.name=n; 
+        saveData();
+    }
+    function removeFolder(path){
+      pushHistory();
+      const parts=path.split("/").map(Number);
+      const idx=parts.pop();
+      if (parts.length){
+        const parent = getFolder(parts.join("/"));
+        parent.subfolders.splice(idx,1);
+      } else {
+        data.folders.splice(idx,1);
+      }
+      saveData();renderAll();
+    }
+
+    // Table ops
+    function addTable(path){
+      pushHistory();
+      const f=getFolder(path);
+      f.tables = f.tables || [];
+      f.tables.push({name:"New table",columns:["Col1","Col2"],rows:[],archived:false});
+      saveData();renderAll();
+    }
+    function renameTable(key,n){
+        const {f,t}=tableRef(key);
+        if(f.tables[t].name === n) return;
+        commitIfChanged(n, f.tables[t].name);
+        f.tables[t].name=n;
+        saveData();
+    }
+    function removeTable(key){
+        pushHistory();
+        const {f,t}=tableRef(key);
+        f.tables.splice(t,1);
+        saveData();
+        renderAll();
+    }
+    function renameColumn(key,c,n){
+        const {f,t}=tableRef(key);
+        if(f.tables[t].columns[c] === n) return;
+        commitIfChanged(n, f.tables[t].columns[c]);
+        f.tables[t].columns[c]=n;
+        saveData();
+    }
+    function addRow(key){
+        pushHistory();
+        const {f,t}=tableRef(key);
+        const cols=f.tables[t].columns.length;
+        f.tables[t].rows.push(Array(cols).fill(""));
+        saveData();
+        renderAll();
+    }
+    function editCellText(key,r,c,v){
+        const {f,t}=tableRef(key);
+        const currentVal = (typeof f.tables[t].rows[r][c] === 'string') ? f.tables[t].rows[r][c] : "";
+        if(currentVal === v) return;
+        commitIfChanged(v, currentVal);
+        f.tables[t].rows[r][c]=v;
+        saveData();
+    }
+    function addColumn(key){
+      pushHistory();
+      const {f,t} = tableRef(key);
+      const newColName = "Col" + (f.tables[t].columns.length + 1);
+      f.tables[t].columns.push(newColName);
+      f.tables[t].rows.forEach(row => row.push(""));
+      saveData();
+      renderAll();
+    }
+
+    // Archive ops
+    function toggleShowArchived(){ showArchived = !showArchived; renderAll(); }
+    function toggleArchiveFolder(path, state){
+      pushHistory();
+      const folder = getFolder(path);
+      setFolderArchive(folder, !!state);
+      saveData();
+      renderAll();
+    }
+    function setFolderArchive(folderNode, state){
+      folderNode.archived = state;
+      if (folderNode.tables) folderNode.tables.forEach(t => t.archived = state);
+      if (folderNode.subfolders) folderNode.subfolders.forEach(sf => setFolderArchive(sf, state));
+    }
+    function toggleArchiveTable(key, state){
+      pushHistory();
+      const {f,t} = tableRef(key);
+      f.tables[t].archived = !!state;
+      saveData();
+      renderAll();
+    }
+
+    // Cell selection and attachments
+    function selectCell(key, r, c){
+      selectedCell = { key, r, c };
+      renderAdmin();
+      renderUser();
+      updateSelectedCellLabel();
+    }
+
+    function clearSelectedCellContent(){
+      if (!selectedCell) return;
+      pushHistory();
+      const { key, r, c } = selectedCell;
+      const { f, t } = tableRef(key);
+      f.tables[t].rows[r][c] = "";
+      saveData();
+      renderAll();
+    }
+
+    async function handleCellFileAttach(){
+      if (!selectedCell){ alert('Select a cell first (click a cell in admin view).'); return; }
+      const input = document.getElementById('cellFileInput');
+      const files = input.files;
+      if (!files || files.length === 0){ alert('Choose a file to attach'); return; }
+      
+      // We push history inside the onload to ensure we captured state before async change
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = function(e){
+        pushHistory(); 
+        const dataUrl = e.target.result;
+        const attach = { type: 'file', name: file.name, mime: file.type || 'application/octet-stream', url: dataUrl };
+        const { key, r, c } = selectedCell;
+        const { f, t } = tableRef(key);
+        f.tables[t].rows[r][c] = attach;
+        saveData();
+        input.value = "";
+        renderAll();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function handleCellLinkAttach(){
+      if (!selectedCell){ alert('Select a cell first (click a cell in admin view).'); return; }
+      const url = document.getElementById('cellLinkInput').value.trim();
+      if (!url){ alert('Enter a link'); return; }
+      
+      pushHistory();
+      const name = url.replace(/^https?:\/\//,'').split('/')[0];
+      const attach = { type: 'link', name: name, mime: '', url: url };
+      const { key, r, c } = selectedCell;
+      const { f, t } = tableRef(key);
+      f.tables[t].rows[r][c] = attach;
+      saveData();
+      document.getElementById('cellLinkInput').value = "";
+      renderAll();
+    }
+
+    function removeCellAttachment(key, r, c){
+      pushHistory();
+      const { f, t } = tableRef(key);
+      f.tables[t].rows[r][c] = "";
+      saveData();
+      renderAll();
+    }
+
+    // Helpers
+    function getFolder(path){
+      const parts = path === "" ? [] : path.split("/").map(Number);
+      let node = { subfolders: data.folders };
+      for (const p of parts){
+        node = node.subfolders[p];
+      }
+      return node;
+    }
+    function tableRef(key){
+      const [path, t] = key.split("|");
+      return { f: getFolder(path), t: parseInt(t) };
+    }
+
+    function showUser(){document.getElementById('user').style.display='block';document.getElementById('admin').style.display='none';}
+    function showAdmin(){document.getElementById('admin').style.display='block';document.getElementById('user').style.display='none';}
+
+    function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
+
+    loadData();
+  </script>
 </body>
 </html>
